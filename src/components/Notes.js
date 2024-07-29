@@ -1,7 +1,6 @@
-// src/components/Notes.js
 import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, ListGroup, Modal } from 'react-bootstrap';
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { auth } from '../firebaseConfig';
 
 const Notes = () => {
@@ -15,7 +14,11 @@ const Notes = () => {
     useEffect(() => {
         const notesCollection = collection(db, 'notes');
         const unsubscribe = onSnapshot(notesCollection, (snapshot) => {
-            const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const notesData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                history: doc.data().history || [] // Ensure history is an array
+            }));
             setNotes(notesData);
         });
         return () => unsubscribe();
@@ -30,7 +33,16 @@ const Notes = () => {
 
     const handleEditNote = async (id, newText) => {
         const noteDoc = doc(db, 'notes', id);
-        await updateDoc(noteDoc, { text: newText });
+        const noteSnapshot = await getDoc(noteDoc);
+        const noteData = noteSnapshot.data();
+
+        if (noteData) {
+            const updatedHistory = [
+                ...(noteData.history || []),
+                { text: noteData.text, timestamp: new Date() }
+            ];
+            await updateDoc(noteDoc, { text: newText, history: updatedHistory });
+        }
     };
 
     const handleDeleteNote = async (id) => {
