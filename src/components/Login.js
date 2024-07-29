@@ -4,7 +4,7 @@ import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { Container, Form, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebaseConfig';
-
+import {getDocs } from 'firebase/firestore';
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
