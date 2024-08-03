@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, ListGroup, Modal } from 'react-bootstrap';
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, getDoc, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, getDoc, getDocs, Timestamp } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const Notes = () => {
     const [notebooks, setNotebooks] = useState([]);
@@ -13,12 +14,14 @@ const Notes = () => {
     const [showNotebookModal, setShowNotebookModal] = useState(false);
     const [showEditNotebookModal, setShowEditNotebookModal] = useState(false);
     const [showNotebookHistoryModal, setShowNotebookHistoryModal] = useState(false);
+    const [showEditNoteModal, setShowEditNoteModal] = useState(false);
     const [selectedNote, setSelectedNote] = useState(null);
+    const [editNoteText, setEditNoteText] = useState('');
     const [newNotebookName, setNewNotebookName] = useState('');
     const [editNotebookId, setEditNotebookId] = useState(null);
     const [notebookToEdit, setNotebookToEdit] = useState('');
-    const [revertVersion, setRevertVersion] = useState(null);
     const db = getFirestore();
+    const auth = getAuth();
 
     useEffect(() => {
         const notebooksCollection = collection(db, 'notebooks');
@@ -28,9 +31,14 @@ const Notes = () => {
                 ...doc.data()
             }));
             setNotebooks(notebooksData);
+
+            // Check if the selected notebook still exists
+            if (selectedNotebook && !snapshot.docs.find(doc => doc.id === selectedNotebook.id)) {
+                setSelectedNotebook(null);  // Set to null if the notebook is deleted
+            }
         });
         return () => unsubscribe();
-    }, [db]);
+    }, [selectedNotebook, db]);
 
     useEffect(() => {
         if (selectedNotebook) {
@@ -43,16 +51,22 @@ const Notes = () => {
                 setNotebookNotes(notesData);
             });
             return () => unsubscribe();
+        } else {
+            setNotebookNotes([]);
         }
     }, [selectedNotebook, db]);
 
     const handleAddNote = async () => {
         if (newNote.trim() && selectedNotebook) {
-            await addDoc(collection(db, 'notebooks', selectedNotebook.id, 'notes'), {
-                text: newNote,
-                createdAt: new Date()
-            });
-            setNewNote('');
+            const user = auth.currentUser;
+            if (user) {
+                await addDoc(collection(db, 'notebooks', selectedNotebook.id, 'notes'), {
+                    text: newNote,
+                    createdAt: Timestamp.now(),
+                    email: user.email
+                });
+                setNewNote('');
+            }
         }
     };
 
@@ -61,13 +75,22 @@ const Notes = () => {
             const noteDoc = doc(db, 'notebooks', selectedNotebook.id, 'notes', id);
             const noteSnapshot = await getDoc(noteDoc);
             const noteData = noteSnapshot.data();
+            const user = auth.currentUser;
 
-            if (noteData) {
+            if (noteData && user) {
                 const updatedHistory = [
                     ...(noteData.history || []),
-                    { text: noteData.text, timestamp: new Date() }
+                    { text: noteData.text, timestamp: Timestamp.now(), email: noteData.email }
                 ];
-                await updateDoc(noteDoc, { text: newText, history: updatedHistory });
+
+                const deduplicatedHistory = updatedHistory.filter((item, index, self) =>
+                    index === self.findIndex((t) => (
+                        t.text === item.text && t.timestamp.toMillis() === item.timestamp.toMillis()
+                    ))
+                );
+
+                await updateDoc(noteDoc, { text: newText, history: deduplicatedHistory, email: user.email });
+                setShowEditNoteModal(false); // Close the modal after editing
             }
         }
     };
@@ -93,18 +116,39 @@ const Notes = () => {
     const handleRevertVersion = async (version) => {
         if (selectedNote) {
             const noteDoc = doc(db, 'notebooks', selectedNotebook.id, 'notes', selectedNote.id);
-            await updateDoc(noteDoc, { text: version.text });
+            const noteSnapshot = await getDoc(noteDoc);
+            const noteData = noteSnapshot.data();
+            const user = auth.currentUser;
+
+            if (noteData && user) {
+                const updatedHistory = [
+                    ...(noteData.history || []),
+                    { text: noteData.text, timestamp: Timestamp.now(), email: noteData.email }
+                ];
+
+                const deduplicatedHistory = updatedHistory.filter((item, index, self) =>
+                    index === self.findIndex((t) => (
+                        t.text === item.text && t.timestamp.toMillis() === item.timestamp.toMillis()
+                    ))
+                );
+
+                await updateDoc(noteDoc, { text: version.text, history: deduplicatedHistory, email: user.email });
+            }
         }
     };
 
     const handleAddNotebook = async () => {
         if (newNotebookName.trim()) {
-            await addDoc(collection(db, 'notebooks'), {
-                name: newNotebookName,
-                history: []
-            });
-            setNewNotebookName('');
-            setShowNotebookModal(false);
+            const user = auth.currentUser;
+            if (user) {
+                await addDoc(collection(db, 'notebooks'), {
+                    name: newNotebookName,
+                    history: [],
+                    email: user.email
+                });
+                setNewNotebookName('');
+                setShowNotebookModal(false);
+            }
         }
     };
 
@@ -113,13 +157,21 @@ const Notes = () => {
             const notebookDoc = doc(db, 'notebooks', editNotebookId);
             const notebookSnapshot = await getDoc(notebookDoc);
             const notebookData = notebookSnapshot.data();
+            const user = auth.currentUser;
 
-            if (notebookData) {
+            if (notebookData && user) {
                 const updatedHistory = [
                     ...(notebookData.history || []),
-                    { name: notebookData.name, timestamp: new Date() }
+                    { name: notebookData.name, timestamp: Timestamp.now(), email: notebookData.email }
                 ];
-                await updateDoc(notebookDoc, { name: notebookToEdit, history: updatedHistory });
+
+                const deduplicatedHistory = updatedHistory.filter((item, index, self) =>
+                    index === self.findIndex((t) => (
+                        t.name === item.name && t.timestamp.toMillis() === item.timestamp.toMillis()
+                    ))
+                );
+
+                await updateDoc(notebookDoc, { name: notebookToEdit, history: deduplicatedHistory, email: user.email });
             }
 
             setNotebookToEdit('');
@@ -154,7 +206,6 @@ const Notes = () => {
     const handleCloseEditNotebookModal = () => {
         setShowEditNotebookModal(false);
         setEditNotebookId(null);
-        setNotebookToEdit('');
     };
 
     const handleShowNotebookHistory = async () => {
@@ -162,15 +213,8 @@ const Notes = () => {
             const notebookDoc = doc(db, 'notebooks', selectedNotebook.id);
             const notebookSnapshot = await getDoc(notebookDoc);
             const notebookData = notebookSnapshot.data();
-            setNotebookHistory(notebookData?.history || []);
+            setNotebookHistory(notebookData.history || []);
             setShowNotebookHistoryModal(true);
-        }
-    };
-
-    const handleRevertNotebookVersion = async (version) => {
-        if (selectedNotebook) {
-            const notebookDoc = doc(db, 'notebooks', selectedNotebook.id);
-            await updateDoc(notebookDoc, { name: version.name });
         }
     };
 
@@ -179,124 +223,92 @@ const Notes = () => {
         setNotebookHistory([]);
     };
 
+    const handleRevertNotebookVersion = async (version) => {
+        if (selectedNotebook) {
+            const notebookDoc = doc(db, 'notebooks', selectedNotebook.id);
+            const notebookSnapshot = await getDoc(notebookDoc);
+            const notebookData = notebookSnapshot.data();
+            const user = auth.currentUser;
+
+            if (notebookData && user) {
+                const updatedHistory = [
+                    ...(notebookData.history || []),
+                    { name: notebookData.name, timestamp: Timestamp.now(), email: notebookData.email }
+                ];
+
+                const deduplicatedHistory = updatedHistory.filter((item, index, self) =>
+                    index === self.findIndex((t) => (
+                        t.name === item.name && t.timestamp.toMillis() === item.timestamp.toMillis()
+                    ))
+                );
+
+                await updateDoc(notebookDoc, { name: version.name, history: deduplicatedHistory, email: user.email });
+            }
+        }
+    };
+
+    const handleShowEditNoteModal = (note) => {
+        setSelectedNote(note);
+        setEditNoteText(note.text);
+        setShowEditNoteModal(true);
+    };
+
+    const handleCloseEditNoteModal = () => {
+        setShowEditNoteModal(false);
+        setSelectedNote(null);
+    };
+
+    const handleNotebookSelect = (e) => {
+        const notebookId = e.target.value;
+        const selected = notebooks.find(notebook => notebook.id === notebookId);
+        setSelectedNotebook(selected);
+    };
+
     return (
         <Container>
-            <h2>Notes</h2>
-            <Button variant="primary" onClick={() => setShowNotebookModal(true)}>Add Notebook</Button>
-
-            <Form className="mt-3">
-                <Form.Group controlId="formSelectNotebook">
-                    <Form.Label>Select Notebook</Form.Label>
-                    <Form.Control
-                        as="select"
-                        value={selectedNotebook ? selectedNotebook.id : ''}
-                        onChange={(e) => {
-                            const notebookId = e.target.value;
-                            const notebook = notebooks.find(nb => nb.id === notebookId);
-                            setSelectedNotebook(notebook);
-                        }}
-                    >
-                        <option value="">Select a notebook</option>
-                        {notebooks.map(notebook => (
-                            <option key={notebook.id} value={notebook.id}>
-                                {notebook.name}
-                            </option>
-                        ))}
-                    </Form.Control>
-                </Form.Group>
-
-                {selectedNotebook && (
-                    <>
-                        <Form.Group controlId="formNewNote">
-                            <Form.Label>New Note</Form.Label>
-                            <Form.Control
-                                type="text"
-                                placeholder="Enter new note"
-                                value={newNote}
-                                onChange={(e) => setNewNote(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Button variant="primary" onClick={handleAddNote}>Add Note</Button>
-
-                        {/* Buttons for editing, deleting, and viewing history of the selected notebook */}
-                        <div className="mt-3">
-                            <Button
-                                variant="warning"
-                                onClick={() => handleShowEditNotebookModal(selectedNotebook)}
-                            >
-                                Edit Notebook
-                            </Button>
-                            <Button
-                                variant="danger"
-                                className="ml-2"
-                                onClick={() => handleDeleteNotebook(selectedNotebook.id)}
-                            >
-                                Delete Notebook
-                            </Button>
-                            <Button
-                                variant="info"
-                                className="ml-2"
-                                onClick={handleShowNotebookHistory}
-                            >
-                                View History
-                            </Button>
-                        </div>
-                    </>
-                )}
-            </Form>
-
-            {selectedNotebook && (
-                <ListGroup className="mt-3">
-                    {notebookNotes.map(note => (
-                        <ListGroup.Item key={note.id}>
-                            {note.text}
-                            <Button
-                                variant="link"
-                                onClick={() => handleEditNote(note.id, prompt('Edit note:', note.text))}
-                            >
-                                Edit
-                            </Button>
-                            <Button variant="link" onClick={() => handleDeleteNote(note.id)}>Delete</Button>
-                            <Button variant="link" onClick={() => handleShowNoteModal(note)}>View History</Button>
-                        </ListGroup.Item>
+            <Form.Group controlId="notebookSelect">
+                <Form.Label>Select Notebook</Form.Label>
+                <Form.Control as="select" onChange={handleNotebookSelect}>
+                    <option value="">Select...</option>
+                    {notebooks.map(notebook => (
+                        <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
                     ))}
-                </ListGroup>
+                </Form.Control>
+            </Form.Group>
+            <Button variant="primary" onClick={() => setShowNotebookModal(true)}>Add Notebook</Button>
+            <Button variant="secondary" onClick={handleShowNotebookHistory} disabled={!selectedNotebook}>Show Notebook History</Button>
+            {selectedNotebook && (
+                <>
+                    <Button variant="warning" onClick={() => handleShowEditNotebookModal(selectedNotebook)}>Edit Notebook</Button>
+                    <Button variant="danger" onClick={() => handleDeleteNotebook(selectedNotebook.id)}>Delete Notebook</Button>
+                    <Form.Group controlId="newNote">
+                        <Form.Label>Add a Note</Form.Label>
+                        <Form.Control type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)} />
+                    </Form.Group>
+                    <Button variant="primary" onClick={handleAddNote}>Add Note</Button>
+                    <ListGroup>
+                        {notebookNotes.map(note => (
+                            <ListGroup.Item key={note.id}>
+                                <div>{note.text}</div>
+                                <div>{note.email} - {note.createdAt.toDate().toLocaleString()}</div>
+                                <Button variant="secondary" onClick={() => handleShowNoteModal(note)}>Show Version History</Button>
+                                <Button variant="warning" onClick={() => handleShowEditNoteModal(note)}>Edit</Button>
+                                <Button variant="danger" onClick={() => handleDeleteNote(note.id)}>Delete</Button>
+                            </ListGroup.Item>
+                        ))}
+                    </ListGroup>
+                </>
             )}
 
-            {selectedNote && (
-                <Modal show={showNoteModal} onHide={handleCloseNoteModal}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>Version History</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <ListGroup>
-                            {versionHistory.map((version, index) => (
-                                <ListGroup.Item key={index}>
-                                    {version.text}
-                                    <Button variant="link" onClick={() => handleRevertVersion(version)}>Revert</Button>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={handleCloseNoteModal}>Close</Button>
-                    </Modal.Footer>
-                </Modal>
-            )}
-
+            {/* Add Notebook Modal */}
             <Modal show={showNotebookModal} onHide={() => setShowNotebookModal(false)}>
                 <Modal.Header closeButton>
                     <Modal.Title>Add Notebook</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    <Form.Group controlId="formNotebookName">
+                    <Form.Group controlId="newNotebookName">
                         <Form.Label>Notebook Name</Form.Label>
-                        <Form.Control
-                            type="text"
-                            placeholder="Enter notebook name"
-                            value={newNotebookName}
-                            onChange={(e) => setNewNotebookName(e.target.value)}
-                        />
+                        <Form.Control type="text" value={newNotebookName} onChange={(e) => setNewNotebookName(e.target.value)} />
                     </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
@@ -305,50 +317,79 @@ const Notes = () => {
                 </Modal.Footer>
             </Modal>
 
-            {editNotebookId && (
-                <Modal show={showEditNotebookModal} onHide={handleCloseEditNotebookModal}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>Edit Notebook</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <Form.Group controlId="formEditNotebookName">
-                            <Form.Label>Notebook Name</Form.Label>
-                            <Form.Control
-                                type="text"
-                                value={notebookToEdit}
-                                onChange={(e) => setNotebookToEdit(e.target.value)}
-                            />
-                        </Form.Group>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={handleCloseEditNotebookModal}>Close</Button>
-                        <Button variant="primary" onClick={handleEditNotebook}>Save Changes</Button>
-                    </Modal.Footer>
-                </Modal>
-            )}
+            {/* Edit Notebook Modal */}
+            <Modal show={showEditNotebookModal} onHide={handleCloseEditNotebookModal}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Edit Notebook</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form.Group controlId="notebookToEdit">
+                        <Form.Label>New Notebook Name</Form.Label>
+                        <Form.Control type="text" value={notebookToEdit} onChange={(e) => setNotebookToEdit(e.target.value)} />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleCloseEditNotebookModal}>Close</Button>
+                    <Button variant="primary" onClick={handleEditNotebook}>Save Changes</Button>
+                </Modal.Footer>
+            </Modal>
 
+            {/* Note History Modal */}
+            <Modal show={showNoteModal} onHide={handleCloseNoteModal}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Note Version History</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <ListGroup>
+                        {versionHistory.map((version, index) => (
+                            <ListGroup.Item key={index}>
+                                <div>{version.text}</div>
+                                <div>{version.email} - {version.timestamp.toDate().toLocaleString()}</div>
+                                <Button variant="secondary" onClick={() => handleRevertVersion(version)}>Revert</Button>
+                            </ListGroup.Item>
+                        ))}
+                    </ListGroup>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleCloseNoteModal}>Close</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Notebook History Modal */}
             <Modal show={showNotebookHistoryModal} onHide={handleCloseNotebookHistoryModal}>
                 <Modal.Header closeButton>
-                    <Modal.Title>Notebook History</Modal.Title>
+                    <Modal.Title>Notebook Version History</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
                     <ListGroup>
                         {notebookHistory.map((version, index) => (
                             <ListGroup.Item key={index}>
-                                {version.name} - {version.timestamp.toDate().toLocaleString()}
-                                <Button
-                                    variant="link"
-                                    className="ml-2"
-                                    onClick={() => handleRevertNotebookVersion(version)}
-                                >
-                                    Revert
-                                </Button>
+                                <div>{version.name}</div>
+                                <div>{version.email} - {version.timestamp.toDate().toLocaleString()}</div>
+                                <Button variant="secondary" onClick={() => handleRevertNotebookVersion(version)}>Revert</Button>
                             </ListGroup.Item>
                         ))}
                     </ListGroup>
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={handleCloseNotebookHistoryModal}>Close</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Edit Note Modal */}
+            <Modal show={showEditNoteModal} onHide={handleCloseEditNoteModal}>
+                <Modal.Header closeButton>
+                    <Modal.Title>Edit Note</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form.Group controlId="editNoteText">
+                        <Form.Label>Note Text</Form.Label>
+                        <Form.Control type="text" value={editNoteText} onChange={(e) => setEditNoteText(e.target.value)} />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleCloseEditNoteModal}>Close</Button>
+                    <Button variant="primary" onClick={() => handleEditNote(selectedNote.id, editNoteText)}>Save Changes</Button>
                 </Modal.Footer>
             </Modal>
         </Container>
