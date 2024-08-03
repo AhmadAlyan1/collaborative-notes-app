@@ -27,7 +27,16 @@ const App = () => {
                     <Route path="/login" element={user ? <Navigate to="/notes" /> : <Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/notes" element={user ? <Notes /> : <Navigate to="/login" />} />
-                    <Route path="/" element={<h1>Welcome to Collaborative Note-Taking App</h1>} />
+                    <Route
+                        path="/"
+                        element={
+                            <>
+                                <h1>Welcome to Collaborative Note-Taking App.</h1>
+                                <br />
+                                <h5>By: Ahmad Alyan</h5>
+                            </>
+                        }
+                    />
                 </Routes>
             </Container>
         </Router>
