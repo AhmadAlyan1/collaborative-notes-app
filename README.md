@@ -41,8 +41,9 @@ npm install
 4. Create a `firebaseConfig.js` file in the `src` directory and add your Firebase configuration:
 
 ```javascript
-// src/firebaseConfig.js
 import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
     apiKey: "YOUR_API_KEY",
@@ -54,10 +55,11 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-export default app;
+export { auth, db };
 ```
-
 ### Usage
 
 To start the development server, run:
@@ -98,11 +100,3 @@ This will launch the app in your default web browser at `http://localhost:3000`.
 - View version history of notebooks and notes
 - Revert to previous versions of notebooks and notes
 - User-specific data management
-
-## Installation
-
-1. Clone the repository:
-
-```sh
-git clone https://github.com/your-username/collaborative-notes-app.git
-cd collaborative-notes-app
