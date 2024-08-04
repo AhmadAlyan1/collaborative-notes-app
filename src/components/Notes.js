@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Form, Button, ListGroup, Modal } from 'react-bootstrap';
+import { Container, Button} from 'react-bootstrap';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, getDoc, getDocs, Timestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import AddNotebookModal from './AddNotebookModal';
+import EditNotebookModal from './EditNotebookModal';
+import NotebookHistoryModal from './NotebookHistoryModal';
+import NoteModal from './NoteModal';
+import EditNoteModal from './EditNoteModal';
+import NotebookList from './NotebookList';
+import NoteList from './NoteList';
 
 const Notes = () => {
     const [notebooks, setNotebooks] = useState([]);
@@ -245,222 +252,69 @@ const Notes = () => {
                 );
 
                 await updateDoc(notebookDoc, { name: version.name, history: deduplicatedHistory, email: user.email });
+                // Update the selected notebook's name after reverting
+                setSelectedNotebook({ ...selectedNotebook, name: version.name });
             }
         }
     };
 
     return (
         <Container>
-            <h1>NoteBooks</h1>
-            <div className="d-flex mb-3">
-                <Button variant="primary" onClick={() => setShowNotebookModal(true)}>
-                    Add Notebook
-                </Button>
-                {selectedNotebook && (
-                    <>
-                        <Button variant="secondary" onClick={handleShowNotebookHistory}>
-                            View Notebook History
-                        </Button>
-                        <Button variant="warning" onClick={() => handleShowEditNotebookModal(selectedNotebook)}>
-                            Edit Notebook
-                        </Button>
-                        <Button variant="danger" onClick={() => handleDeleteNotebook(selectedNotebook.id)}>
-                            Delete Notebook
-                        </Button>
-                    </>
-                )}
-            </div>
-            <ListGroup>
-                {notebooks.map(notebook => (
-                    <ListGroup.Item
-                        key={notebook.id}
-                        active={selectedNotebook && notebook.id === selectedNotebook.id}
-                        onClick={() => setSelectedNotebook(notebook)}
-                    >
-                        {notebook.name}
-                    </ListGroup.Item>
-                ))}
-            </ListGroup>
-
-            {selectedNotebook && (
-                <>
-                    <h2 className="mt-4">Notes</h2>
-                    <Form.Control
-                        type="text"
-                        rows={3}
-                        placeholder="New note..."
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                    />
-                    <Button variant="primary" onClick={handleAddNote}>
-                        Add Note
-                    </Button>
-                    <ListGroup className="mt-3">
-                        {notebookNotes.map(note => (
-                            <ListGroup.Item key={note.id}>
-                                <div className="d-flex justify-content-between align-items-center">
-                                    <div>{note.text}</div>
-                                    <div>
-                                        <Button variant="info" size="sm" onClick={() => handleShowNoteModal(note)}>
-                                            View Versions
-                                        </Button>
-                                        <Button variant="warning" size="sm" onClick={() => {
-                                            setSelectedNote(note);
-                                            setEditNoteText(note.text);
-                                            setShowEditNoteModal(true);
-                                        }}>
-                                            Edit
-                                        </Button>
-                                        <Button variant="danger" size="sm" onClick={() => handleDeleteNote(note.id)}>
-                                            Delete
-                                        </Button>
-                                    </div>
-                                </div>
-                            </ListGroup.Item>
-                        ))}
-                    </ListGroup>
-                </>
-            )}
-
-            <Modal show={showNoteModal} onHide={handleCloseNoteModal}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Note Versions</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    {versionHistory.length > 0 ? (
-                        <ListGroup>
-                            {versionHistory.map((version, index) => (
-                                <ListGroup.Item key={index}>
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <p>{version.text}</p>
-                                            <small>{new Date(version.timestamp.toMillis()).toLocaleString()}</small>
-                                            <small> - {version.email}</small>
-                                        </div>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={() => handleRevertVersion(version)}
-                                        >
-                                            Revert
-                                        </Button>
-                                    </div>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    ) : (
-                        <p>No versions available.</p>
-                    )}
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={handleCloseNoteModal}>
-                        Close
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-
-            <Modal show={showNotebookModal} onHide={() => setShowNotebookModal(false)}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Add Notebook</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <Form.Control
-                        type="text"
-                        placeholder="Notebook name"
-                        value={newNotebookName}
-                        onChange={(e) => setNewNotebookName(e.target.value)}
-                    />
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowNotebookModal(false)}>
-                        Close
-                    </Button>
-                    <Button variant="primary" onClick={handleAddNotebook}>
-                        Add
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-
-            <Modal show={showEditNotebookModal} onHide={handleCloseEditNotebookModal}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Edit Notebook</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <Form.Control
-                        type="text"
-                        placeholder="Notebook name"
-                        value={notebookToEdit}
-                        onChange={(e) => setNotebookToEdit(e.target.value)}
-                    />
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={handleCloseEditNotebookModal}>
-                        Close
-                    </Button>
-                    <Button variant="primary" onClick={handleEditNotebook}>
-                        Save
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-
-            <Modal show={showEditNoteModal} onHide={() => setShowEditNoteModal(false)}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Edit Note</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <Form.Control
-                        type="text"
-                        rows={3}
-                        value={editNoteText}
-                        onChange={(e) => setEditNoteText(e.target.value)}
-                    />
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={() => setShowEditNoteModal(false)}>
-                        Close
-                    </Button>
-                    <Button variant="primary" onClick={() => handleEditNote(selectedNote.id, editNoteText)}>
-                        Save
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-
-            <Modal show={showNotebookHistoryModal} onHide={handleCloseNotebookHistoryModal}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Notebook Versions</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    {notebookHistory.length > 0 ? (
-                        <ListGroup>
-                            {notebookHistory.map((version, index) => (
-                                <ListGroup.Item key={index}>
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <p>{version.name}</p>
-                                            <small>{new Date(version.timestamp.toMillis()).toLocaleString()}</small>
-                                            <small> - {version.email}</small>
-                                        </div>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={() => handleRevertNotebookVersion(version)}
-                                        >
-                                            Revert
-                                        </Button>
-                                    </div>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    ) : (
-                        <p>No versions available.</p>
-                    )}
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={handleCloseNotebookHistoryModal}>
-                        Close
-                    </Button>
-                </Modal.Footer>
-            </Modal>
+            <Button className="my-3" onClick={() => setShowNotebookModal(true)}>Add Notebook</Button>
+            <NotebookList
+                className="my-3"
+                notebooks={notebooks}
+                selectedNotebook={selectedNotebook}
+                setSelectedNotebook={setSelectedNotebook}
+                handleShowEditNotebookModal={handleShowEditNotebookModal}
+                handleDeleteNotebook={handleDeleteNotebook}
+                handleShowNotebookHistory={handleShowNotebookHistory}
+            />
+            <NoteList
+                notebookNotes={notebookNotes}
+                newNote={newNote}
+                setNewNote={setNewNote}
+                handleAddNote={handleAddNote}
+                handleDeleteNote={handleDeleteNote}
+                handleShowNoteModal={handleShowNoteModal}
+                setShowEditNoteModal={setShowEditNoteModal}
+                setEditNoteText={setEditNoteText}
+                setSelectedNote={setSelectedNote}
+            />
+            <AddNotebookModal
+                show={showNotebookModal}
+                onHide={() => setShowNotebookModal(false)}
+                newNotebookName={newNotebookName}
+                setNewNotebookName={setNewNotebookName}
+                handleAddNotebook={handleAddNotebook}
+            />
+            <EditNotebookModal
+                show={showEditNotebookModal}
+                onHide={handleCloseEditNotebookModal}
+                notebookToEdit={notebookToEdit}
+                setNotebookToEdit={setNotebookToEdit}
+                handleEditNotebook={handleEditNotebook}
+            />
+            <NotebookHistoryModal
+                show={showNotebookHistoryModal}
+                onHide={handleCloseNotebookHistoryModal}
+                notebookHistory={notebookHistory}
+                handleRevertNotebookVersion={handleRevertNotebookVersion}
+            />
+            <NoteModal
+                show={showNoteModal}
+                onHide={handleCloseNoteModal}
+                versionHistory={versionHistory}
+                handleRevertVersion={handleRevertVersion}
+            />
+            <EditNoteModal
+                show={showEditNoteModal}
+                onHide={() => setShowEditNoteModal(false)}
+                selectedNote={selectedNote}
+                editNoteText={editNoteText}
+                setEditNoteText={setEditNoteText}
+                handleEditNote={handleEditNote}
+            />
         </Container>
     );
 };
